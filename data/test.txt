@@ -1,0 +1,5 @@
+Artificial Intelligence and Machine Learning
+
+Artificial Intelligence is a field of computer science focused on creating systems that can perform tasks requiring human-like intelligence.
+
+Machine Learning is a subset of Artificial Intelligence that enables systems to learn patterns from data and make predictions without being explicitly programmed for every task.
