@@ -11,6 +11,11 @@ else
   exit 1
 fi
 
+echo "🧹 Stopping stale project servers..."
+pkill -f "uvicorn app.main:app" 2>/dev/null || true
+pkill -f "python serve_frontend.py" 2>/dev/null || true
+sleep 1
+
 echo "🔎 Checking Ollama..."
 if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
   echo "✓ Ollama is running"
@@ -32,19 +37,11 @@ if ! curl -fsS http://127.0.0.1:11434/api/tags | grep -q 'llama3.2:3b'; then
   ollama pull llama3.2:3b
 fi
 
-if lsof -nP -iTCP:8000 -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "✓ API already running on http://127.0.0.1:8000"
-else
-  echo "🚀 Starting API on http://127.0.0.1:8000"
-  nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/ai-document-intelligence-api.log 2>&1 &
-fi
+echo "🚀 Starting API on http://127.0.0.1:8000"
+nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/ai-document-intelligence-api.log 2>&1 &
 
-if lsof -nP -iTCP:3000 -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "✓ Frontend already running on http://127.0.0.1:3000"
-else
-  echo "🌐 Starting frontend on http://127.0.0.1:3000"
-  nohup python serve_frontend.py >/tmp/ai-document-intelligence-frontend.log 2>&1 &
-fi
+echo "🌐 Starting frontend on http://127.0.0.1:3000"
+nohup python serve_frontend.py >/tmp/ai-document-intelligence-frontend.log 2>&1 &
 
 sleep 2
 curl -fsS http://127.0.0.1:8000/health | python -m json.tool
