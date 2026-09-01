@@ -8,17 +8,33 @@ class LlamaGenerator:
         self.model = model
         self.ollama_url = ollama_url
 
-    def generate(self, prompt: str, max_tokens: int = 512) -> str:
+    def generate(
+        self,
+        prompt: str,
+        max_tokens: int = 512,
+        json_mode: bool = False,
+        temperature: float = 0.2,
+    ) -> str:
+        """Generate a response from Ollama, optionally enforcing JSON output."""
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+        }
+        if json_mode:
+            # Ollama's JSON mode makes structured-output generation much more
+            # reliable than asking the model to imitate JSON in free-form text.
+            payload["format"] = "json"
+
         try:
             response = requests.post(
                 f"{self.ollama_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"num_predict": max_tokens, "temperature": 0.2},
-                },
-                timeout=60,
+                json=payload,
+                timeout=120 if json_mode else 60,
             )
             response.raise_for_status()
             return response.json().get("response", "").strip()
