@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import tempfile
 import os
 
@@ -11,7 +11,7 @@ from app.contradictions import detect_contradictions
 app = FastAPI(
     title="AI Document Intelligence Platform",
     description="An AI-powered document analysis and RAG platform.",
-    version="0.4.1",
+    version="0.5.0",
 )
 
 app.add_middleware(
@@ -31,11 +31,11 @@ class TextIngestionRequest(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=4000)
 
 
 class QuizRequest(BaseModel):
-    num_questions: int = 10
+    num_questions: int = Field(default=10, ge=1, le=20)
     difficulty: str = "mixed"
     instruction: str = "Conduct a quiz for me"
 
@@ -47,7 +47,14 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "documents_ingested": rag_pipeline.documents_ingested}
+    """Expose both API and local AI readiness so the frontend can diagnose failures."""
+    ai = rag_pipeline.generator.health()
+    return {
+        "status": "healthy",
+        "documents_ingested": rag_pipeline.documents_ingested,
+        "indexed_chunks": rag_pipeline.vector_store.index.ntotal,
+        "ai": ai,
+    }
 
 
 @app.post("/ingest/text")
@@ -87,15 +94,24 @@ async def ingest_pdf(file: UploadFile = File(...)):
 
 @app.post("/query")
 def query(request: QueryRequest):
+    """Retrieve relevant evidence and generate a grounded answer."""
+    if not rag_pipeline.documents_ingested:
+        raise HTTPException(
+            status_code=400,
+            detail="No documents indexed yet. Upload a PDF or add text first.",
+        )
+
     try:
-        result = rag_pipeline.query(request.question)
+        result = rag_pipeline.query(request.question.strip())
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
         return result
     except HTTPException:
         raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
 
 
 @app.post("/quiz/generate")
@@ -132,6 +148,8 @@ def quiz(request: QuizRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {e}")
 
@@ -146,6 +164,8 @@ def contradictions():
         return detect_contradictions(rag_pipeline)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Contradiction analysis failed: {e}")
 
