@@ -6,11 +6,12 @@ import os
 
 from app.pipeline import RAGPipeline
 from app.quiz_engine import generate_quiz
+from app.contradictions import detect_contradictions
 
 app = FastAPI(
     title="AI Document Intelligence Platform",
     description="An AI-powered document analysis and RAG platform.",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -123,6 +124,20 @@ def quiz(request: QuizRequest):
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {e}")
+
+
+@app.post("/contradictions")
+def contradictions():
+    """Detect conservative, evidence-backed contradictions in indexed documents."""
+    if not rag_pipeline.documents_ingested:
+        raise HTTPException(status_code=400, detail="No documents ingested yet. Please ingest documents first.")
+
+    try:
+        return detect_contradictions(rag_pipeline)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Contradiction analysis failed: {e}")
 
 
 @app.post("/clear")
