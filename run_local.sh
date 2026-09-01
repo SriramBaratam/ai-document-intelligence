@@ -27,7 +27,7 @@ else
     exit 1
   fi
   nohup ollama serve >/tmp/ai-document-intelligence-ollama.log 2>&1 &
-  for _ in {1..20}; do
+  for _ in {1..30}; do
     if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then break; fi
     sleep 1
   done
@@ -40,11 +40,46 @@ fi
 
 echo "🚀 Starting API on http://127.0.0.1:8000"
 nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/ai-document-intelligence-api.log 2>&1 &
+API_PID=$!
+
+echo "⏳ Waiting for API to become ready..."
+API_READY=0
+for _ in {1..60}; do
+  if curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1; then
+    API_READY=1
+    break
+  fi
+  if ! kill -0 "$API_PID" 2>/dev/null; then
+    break
+  fi
+  sleep 1
+done
+
+if [ "$API_READY" -ne 1 ]; then
+  echo "❌ API failed to start on port 8000."
+  echo ""
+  echo "--- API log ---"
+  tail -n 80 /tmp/ai-document-intelligence-api.log 2>/dev/null || true
+  echo "--- end API log ---"
+  exit 1
+fi
+
+echo "✓ API is responding"
 
 echo "🌐 Starting frontend on http://127.0.0.1:3000"
 nohup python serve_frontend_ai.py >/tmp/ai-document-intelligence-frontend.log 2>&1 &
+FRONTEND_PID=$!
 
-sleep 2
+sleep 1
+if ! curl -fsS http://127.0.0.1:3000/ >/dev/null 2>&1; then
+  echo "❌ Frontend failed to start on port 3000."
+  echo ""
+  echo "--- Frontend log ---"
+  tail -n 80 /tmp/ai-document-intelligence-frontend.log 2>/dev/null || true
+  echo "--- end Frontend log ---"
+  exit 1
+fi
+
 curl -fsS http://127.0.0.1:8000/health | python -m json.tool
 
 echo ""
