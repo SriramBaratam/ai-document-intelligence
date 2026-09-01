@@ -5,7 +5,7 @@ import tempfile
 import os
 
 from app.pipeline import RAGPipeline
-from app.quiz import generate_quiz
+from app.quiz_engine import generate_quiz
 
 app = FastAPI(
     title="AI Document Intelligence Platform",
