@@ -34,3 +34,8 @@ class VectorStore:
                 })
 
         return results
+
+    def clear(self):
+        """Clear all documents and reset the index."""
+        self.index = faiss.IndexFlatIP(self.index.d)
+        self.documents = []
