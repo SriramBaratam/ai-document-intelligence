@@ -9,23 +9,20 @@ from app.pipeline import RAGPipeline
 app = FastAPI(
     title="AI Document Intelligence Platform",
     description="An AI-powered document analysis and RAG platform.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
-# Add CORS middleware to allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Initialize the RAG pipeline (shared instance)
 rag_pipeline = RAGPipeline()
 
 
-# Request/Response models
 class TextIngestionRequest(BaseModel):
     text: str
     source: str = "direct_input"
@@ -37,67 +34,51 @@ class QueryRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {
-        "message": "AI Document Intelligence API is running",
-        "status": "success",
-    }
+    return {"message": "AI Document Intelligence API is running", "status": "success"}
 
 
 @app.get("/health")
 def health():
-    """
-    Health check endpoint.
-    """
-    return {
-        "status": "healthy",
-        "documents_ingested": rag_pipeline.documents_ingested,
-    }
+    return {"status": "healthy", "documents_ingested": rag_pipeline.documents_ingested}
 
 
 @app.post("/ingest/text")
 def ingest_text(request: TextIngestionRequest):
-    """
-    Ingest raw text into the RAG pipeline.
-    """
     try:
-        result = rag_pipeline.ingest_text(request.text, source=request.source)
-        return result
+        return rag_pipeline.ingest_text(request.text, source=request.source)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/ingest/pdf")
 async def ingest_pdf(file: UploadFile = File(...)):
-    """
-    Ingest a PDF file into the RAG pipeline.
-    """
-    if not file.filename.endswith(".pdf"):
+    """Ingest a PDF while preserving its original filename for citations."""
+    filename = file.filename or "uploaded.pdf"
+    if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
-    
+
+    tmp_file_path = None
     try:
-        # Save uploaded file to a temporary location
+        contents = await file.read()
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded PDF is empty")
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            contents = await file.read()
             tmp_file.write(contents)
             tmp_file_path = tmp_file.name
-        
-        # Process the PDF
-        result = rag_pipeline.ingest_pdf(tmp_file_path)
-        
-        # Clean up the temporary file
-        os.unlink(tmp_file_path)
-        
-        return result
+
+        return rag_pipeline.ingest_pdf(tmp_file_path, source_name=filename)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            os.unlink(tmp_file_path)
 
 
 @app.post("/query")
 def query(request: QueryRequest):
-    """
-    Ask a question to the RAG pipeline.
-    Returns the answer and retrieved documents.
-    """
     try:
         result = rag_pipeline.query(request.question)
         if "error" in result:
@@ -111,11 +92,7 @@ def query(request: QueryRequest):
 
 @app.post("/clear")
 def clear_documents():
-    """
-    Clear all ingested documents from the vector store.
-    """
     try:
-        result = rag_pipeline.clear_documents()
-        return result
+        return rag_pipeline.clear_documents()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
