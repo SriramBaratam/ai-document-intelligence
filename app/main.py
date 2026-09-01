@@ -11,7 +11,7 @@ from app.contradictions import detect_contradictions
 app = FastAPI(
     title="AI Document Intelligence Platform",
     description="An AI-powered document analysis and RAG platform.",
-    version="0.4.0",
+    version="0.4.1",
 )
 
 app.add_middleware(
@@ -37,6 +37,7 @@ class QueryRequest(BaseModel):
 class QuizRequest(BaseModel):
     num_questions: int = 10
     difficulty: str = "mixed"
+    instruction: str = "Conduct a quiz for me"
 
 
 @app.get("/")
@@ -101,11 +102,19 @@ def query(request: QueryRequest):
 def quiz(request: QuizRequest):
     """Generate a document-grounded quiz for sequential, one-question-at-a-time play."""
     if not rag_pipeline.documents_ingested:
-        raise HTTPException(status_code=400, detail="No documents ingested yet. Please ingest a PDF or text first.")
+        raise HTTPException(
+            status_code=400,
+            detail="No documents ingested yet. Please ingest a PDF or text first.",
+        )
 
     try:
+        instruction = (request.instruction or "Conduct a quiz for me").strip()[:1000]
+        retrieval_query = (
+            f"{instruction}\n"
+            "important concepts, facts, definitions, methods, results and key details"
+        )
         quiz_docs = rag_pipeline.vector_store.search(
-            rag_pipeline.embedder.encode("important concepts, facts, definitions, methods, results and key details"),
+            rag_pipeline.embedder.encode(retrieval_query),
             top_k=min(12, max(5, rag_pipeline.vector_store.index.ntotal)),
         )
         context = "\n\n".join(
@@ -119,6 +128,7 @@ def quiz(request: QuizRequest):
             context,
             num_questions=request.num_questions,
             difficulty=request.difficulty,
+            instruction=instruction,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
