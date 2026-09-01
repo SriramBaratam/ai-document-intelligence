@@ -5,11 +5,12 @@ import tempfile
 import os
 
 from app.pipeline import RAGPipeline
+from app.quiz import generate_quiz
 
 app = FastAPI(
     title="AI Document Intelligence Platform",
     description="An AI-powered document analysis and RAG platform.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.add_middleware(
@@ -30,6 +31,11 @@ class TextIngestionRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
+
+
+class QuizRequest(BaseModel):
+    num_questions: int = 10
+    difficulty: str = "mixed"
 
 
 @app.get("/")
@@ -88,6 +94,35 @@ def query(request: QueryRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/quiz/generate")
+def quiz(request: QuizRequest):
+    """Generate a document-grounded quiz for sequential, one-question-at-a-time play."""
+    if not rag_pipeline.documents_ingested:
+        raise HTTPException(status_code=400, detail="No documents ingested yet. Please ingest a PDF or text first.")
+
+    try:
+        quiz_docs = rag_pipeline.vector_store.search(
+            rag_pipeline.embedder.encode("important concepts, facts, definitions, methods, results and key details"),
+            top_k=min(12, max(5, rag_pipeline.vector_store.index.ntotal)),
+        )
+        context = "\n\n".join(
+            f"[Source {i}: {doc.get('source', 'Unknown')}"
+            + (f", page {doc['page_number']}]" if doc.get("page_number") else "]")
+            + f"\n{doc['document']}"
+            for i, doc in enumerate(quiz_docs, start=1)
+        )
+        return generate_quiz(
+            rag_pipeline.generator,
+            context,
+            num_questions=request.num_questions,
+            difficulty=request.difficulty,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Quiz generation failed: {e}")
 
 
 @app.post("/clear")
